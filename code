@@ -1,0 +1,80 @@
+import socket
+import threading
+import sys
+
+class P2PNode:
+    BACKLOG = 5
+
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.peers = set()
+
+    def start(self):
+        try:
+            self.socket.bind((self.host, self.port))
+            self.socket.listen(self.BACKLOG)
+            print(f"Node listening on {self.host}:{self.port}")
+
+            # Accept incoming connections in a separate thread
+            threading.Thread(target=self.accept_connections).start()
+
+            # Keep the main thread alive
+            threading.Event().wait()
+        finally:
+            self.socket.close()
+
+    def accept_connections(self):
+        while True:
+            client, address = self.socket.accept()
+            print(f"Accepted connection from {address}")
+            self.peers.add(address)
+
+            # Start a thread to handle incoming messages from this peer
+            threading.Thread(target=self.handle_messages, args=(client,)).start()
+
+    def handle_messages(self, client):
+        try:
+            while True:
+                data = client.recv(1024)
+                if not data:
+                    break
+                message = data.decode("utf-8")
+                print(f"Received message: {message}")
+        except Exception as e:
+            print(f"Error handling message: {str(e)}")
+        finally:
+            client.close()
+
+    def send_message(self, peer_host, peer_port, message):
+        peer_socket = None  # Initialize peer_socket to None
+
+        try:
+            peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            peer_socket.connect((peer_host, peer_port))
+            peer_socket.send(message.encode("utf-8"))
+        except Exception as e:
+            print(f"Error sending message: {str(e)}")
+        finally:
+            if peer_socket:
+                peer_socket.close()
+
+if __name__ == "__main__":
+    try:
+        # Create and start nodes
+        node1 = P2PNode("localhost", 5000)
+        node2 = P2PNode("localhost", 5001)
+
+        threading.Thread(target=node1.start).start()
+        threading.Thread(target=node2.start).start()
+
+        # Simulate sending a message from node1 to node2
+        node1.send_message("localhost", 5001, "Hello from Node 1!")
+
+        # Simulate sending a message from node2 to node1
+        node2.send_message("localhost", 5000, "Hello from Node 2!")
+
+    except KeyboardInterrupt:
+        print("Exiting program...")
+        sys.exit(0)
